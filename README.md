@@ -1,8 +1,18 @@
 # KeyBeep
 
+> **Origin story:** This app was born out of a real frustration — a slightly sticky keyboard that would occasionally miss the language-switch keypress. With no audible feedback, it was impossible to know whether the key registered or not, leading to typing in the wrong language. KeyBeep solves this by playing an instant sound on every designated hotkey press, giving you immediate confirmation that the key was heard.
+
 Lightweight Windows tray application that plays a configurable sound every time a designated hotkey is pressed.
 
-Useful as an audible confirmation for mute/unmute keys, PTT buttons, macro keys, or any key you want tactile-style audio feedback for.
+Useful as an audible confirmation for language-switch keys, mute/unmute keys, PTT buttons, macro keys, or any key you want tactile-style audio feedback for.
+
+---
+
+## Screenshots
+
+| Main window | System tray | Installer |
+|:-----------:|:-----------:|:---------:|
+| ![Main window](foto/main_wind.png) | ![System tray](foto/win_tray.png) | ![Installer](foto/installer.png) |
 
 ---
 
