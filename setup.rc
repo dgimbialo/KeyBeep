@@ -1,0 +1,3 @@
+#include "setup_resource.h"
+IDI_MAIN    ICON    "app.ico"
+IDR_PAYLOAD RCDATA  "KeyBeep.exe"

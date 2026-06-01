@@ -1,0 +1,36 @@
+# ---- Build outputs ----
+*.exe
+*.obj
+*.res
+*.pdb
+*.ilk
+*.map
+*.exp
+*.lib
+
+# ---- Build logs ----
+build_log.txt
+
+# ---- Visual Studio / MSVC ----
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+ipch/
+x64/
+x86/
+Debug/
+Release/
+
+# ---- Generated icon (re-creatable by make_icon.ps1) ----
+# app.ico   # keep it — no PowerShell required to build
+
+# ---- Windows ----
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
