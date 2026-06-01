@@ -83,9 +83,7 @@ Right-click tray icon → **Uninstall**, or run `KeyBeep.exe /uninstall`.
 | Beep medium (800 Hz) | Mid MIDI tone, 80 ms |
 | Beep high (1200 Hz) | High MIDI tone, 80 ms |
 | Double Beep | Two ascending MIDI tones |
-| System: Asterisk | Windows `MB_ICONASTERISK` sound |
-| System: Exclamation | Windows `MB_ICONEXCLAMATION` sound |
-| System: Default | Windows `MB_OK` sound |
+
 
 ---
 

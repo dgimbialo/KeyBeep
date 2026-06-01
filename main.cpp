@@ -46,9 +46,6 @@ enum SoundType {
     SOUND_BEEP_MID,
     SOUND_BEEP_HIGH,
     SOUND_DOUBLE_BEEP,
-    SOUND_SYSTEM_ASTERISK,
-    SOUND_SYSTEM_EXCLAMATION,
-    SOUND_SYSTEM_DEFAULT,
     SOUND_COUNT
 };
 
@@ -56,10 +53,7 @@ const wchar_t* SOUND_NAMES[] = {
     L"Beep low (400Hz)",
     L"Beep medium (800Hz)",
     L"Beep high (1200Hz)",
-    L"Double Beep",
-    L"System: Asterisk",
-    L"System: Exclamation",
-    L"System: Default"
+    L"Double Beep"
 };
 
 // ---- Global state ----
@@ -334,9 +328,6 @@ static DWORD WINAPI SoundThreadProc(LPVOID param) {
     case SOUND_BEEP_MID:           PlayMidiTone(800,  80); break;
     case SOUND_BEEP_HIGH:          PlayMidiTone(1200, 80); break;
     case SOUND_DOUBLE_BEEP:        PlayMidiTone(800, 60); Sleep(30); PlayMidiTone(1000, 60); break;
-    case SOUND_SYSTEM_ASTERISK:    MessageBeep(MB_ICONASTERISK); break;
-    case SOUND_SYSTEM_EXCLAMATION: MessageBeep(MB_ICONEXCLAMATION); break;
-    case SOUND_SYSTEM_DEFAULT:     MessageBeep(MB_OK); break;
     default:                       PlayMidiTone(800, 80); break;
     }
     return 0;
