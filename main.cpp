@@ -38,6 +38,10 @@
 #define ID_BTN_CLEAR        3003
 #define ID_COMBO_SOUND      3004
 #define ID_STATIC_HOTKEY    3005
+#define ID_CHECK_CTRL       3006
+#define ID_CHECK_ALT        3007
+#define ID_CHECK_SHIFT      3008
+#define ID_CHECK_WIN        3009
 #define TIMER_WAITING_KEY   4001
 
 // ---- Sound types ----
@@ -100,6 +104,7 @@ void AddTrayIcon(HWND hwnd);
 void RemoveTrayIcon();
 void SaveSettings();
 void LoadSettings();
+void UpdateHotkeyRegistration();
 wchar_t* VKToName(UINT vk, wchar_t* buf, int buflen);
 bool IsAutoStartEnabled();
 void SetAutoStart(bool enable);
@@ -374,6 +379,21 @@ wchar_t* VKToName(UINT vk, wchar_t* buf, int buflen) {
     return buf;
 }
 
+void UpdateHotkeyRegistration() {
+    if (!g.hwndMain) return;
+
+    UnregisterHotKey(g.hwndMain, 1);
+    if (g.triggerVK == 0) return;
+
+    UINT modifiers = 0;
+    if (g.needCtrl)  modifiers |= MOD_CONTROL;
+    if (g.needAlt)   modifiers |= MOD_ALT;
+    if (g.needShift) modifiers |= MOD_SHIFT;
+    if (g.needWin)   modifiers |= MOD_WIN;
+
+    RegisterHotKey(g.hwndMain, 1, modifiers, g.triggerVK);
+}
+
 // ---- Update hotkey label ----
 void UpdateHotkeyLabel() {
     if (!g.hwndStatus) return;
@@ -395,6 +415,13 @@ void UpdateHotkeyLabel() {
     SetWindowTextW(g.hwndStatus, label);
 }
 
+static bool IsRequiredModifierKey(UINT vk) {
+    return (g.needCtrl  && IsCtrlVK(vk))  ||
+           (g.needAlt   && IsAltVK(vk))   ||
+           (g.needShift && IsShiftVK(vk)) ||
+           (g.needWin   && IsWinVK(vk));
+}
+
 // ---- Low-level keyboard hook ----
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION) {
@@ -404,20 +431,26 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             // Capture mode: accept ANY key including standalone modifiers (Ctrl, Alt, Shift, Win)
             if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
                 UINT vk = kb->vkCode;
+
+                // Ignore modifier keys while the user is choosing the main key.
+                // This prevents Ctrl/Alt/Shift/Win from being captured as the hotkey itself.
+                if (IsModifierVK(vk)) {
+                    return CallNextHookEx(g.hKeyboardHook, nCode, wParam, lParam);
+                }
+
                 g.waitingForKey = false;
                 g.triggerVK = vk;
 
-                // Read modifier state but EXCLUDE the key being pressed itself
-                // so that pressing Alt alone gives needAlt=false, triggerVK=VK_LMENU
+                // Read current modifier state at the moment the main key is pressed.
                 bool rawCtrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
                 bool rawAlt   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
                 bool rawShift = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
                 bool rawWin   = ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000) != 0;
 
-                g.needCtrl  = rawCtrl  && !IsCtrlVK(vk);
-                g.needAlt   = rawAlt   && !IsAltVK(vk);
-                g.needShift = rawShift && !IsShiftVK(vk);
-                g.needWin   = rawWin   && !IsWinVK(vk);
+                g.needCtrl  = rawCtrl;
+                g.needAlt   = rawAlt;
+                g.needShift = rawShift;
+                g.needWin   = rawWin;
 
                 // Sync checkboxes
                 SendMessageW(g.hwndCheckCtrl,  BM_SETCHECK, g.needCtrl  ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -429,35 +462,14 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 SetWindowTextW(g.hwndBtnSet, L"Set Key");
                 KillTimer(g.hwndMain, TIMER_WAITING_KEY);
                 SaveSettings();
+                UpdateHotkeyRegistration();
                 return 1; // consume the key
             }
             return CallNextHookEx(g.hKeyboardHook, nCode, wParam, lParam);
         }
 
-        // Normal mode: check hotkey match on KEYDOWN
-        if (g.enabled && g.triggerVK != 0 &&
-            (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
-        {
-            if (kb->vkCode == g.triggerVK) {
-                // When triggerVK IS a modifier, exclude it from the modifier state check
-                // (it will always be "pressed" since it IS the key being pressed)
-                bool ctrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                bool alt   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
-                bool shift = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
-                bool win   = ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000) != 0;
-
-                if (IsCtrlVK(g.triggerVK))  ctrl  = false;
-                if (IsAltVK(g.triggerVK))   alt   = false;
-                if (IsShiftVK(g.triggerVK)) shift = false;
-                if (IsWinVK(g.triggerVK))   win   = false;
-
-                if (ctrl == g.needCtrl && alt == g.needAlt &&
-                    shift == g.needShift && win == g.needWin)
-                {
-                    PostMessageW(g.hwndMain, WM_USER + 10, 0, 0);
-                }
-            }
-        }
+        // Normal hotkey detection is handled by RegisterHotKey/WM_HOTKEY.
+        // The low-level hook is kept only for the "Set Key" capture flow.
     }
     return CallNextHookEx(g.hKeyboardHook, nCode, wParam, lParam);
 }
@@ -537,22 +549,22 @@ void CreateControls(HWND hwnd) {
 
     g.hwndCheckCtrl = CreateWindowExW(0, L"BUTTON", L"Ctrl",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        10, 96, 70, 20, hwnd, NULL, NULL, NULL);
+        10, 96, 70, 20, hwnd, (HMENU)ID_CHECK_CTRL, NULL, NULL);
     SendMessageW(g.hwndCheckCtrl, WM_SETFONT, (WPARAM)hFont, TRUE);
 
     g.hwndCheckAlt = CreateWindowExW(0, L"BUTTON", L"Alt",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        85, 96, 70, 20, hwnd, NULL, NULL, NULL);
+        85, 96, 70, 20, hwnd, (HMENU)ID_CHECK_ALT, NULL, NULL);
     SendMessageW(g.hwndCheckAlt, WM_SETFONT, (WPARAM)hFont, TRUE);
 
     g.hwndCheckShift = CreateWindowExW(0, L"BUTTON", L"Shift",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        160, 96, 70, 20, hwnd, NULL, NULL, NULL);
+        160, 96, 70, 20, hwnd, (HMENU)ID_CHECK_SHIFT, NULL, NULL);
     SendMessageW(g.hwndCheckShift, WM_SETFONT, (WPARAM)hFont, TRUE);
 
     g.hwndCheckWin = CreateWindowExW(0, L"BUTTON", L"Win",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        235, 96, 70, 20, hwnd, NULL, NULL, NULL);
+        235, 96, 70, 20, hwnd, (HMENU)ID_CHECK_WIN, NULL, NULL);
     SendMessageW(g.hwndCheckWin, WM_SETFONT, (WPARAM)hFont, TRUE);
 
     // Buttons: Set key, Clear
@@ -622,14 +634,33 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         AddTrayIcon(hwnd);
         CreateControls(hwnd);
         InitMidiOut();
+        UpdateHotkeyRegistration();
         return 0;
 
     case WM_USER + 10:  // play sound (posted from hook)
         PlayConfiguredSound();
         return 0;
 
+    case WM_HOTKEY:
+        if (g.enabled) PlayConfiguredSound();
+        return 0;
+
     case WM_COMMAND: {
         WORD id = LOWORD(wParam);
+        if (HIWORD(wParam) == BN_CLICKED &&
+            (id == ID_CHECK_CTRL || id == ID_CHECK_ALT ||
+             id == ID_CHECK_SHIFT || id == ID_CHECK_WIN))
+        {
+            g.needCtrl  = (SendMessageW(g.hwndCheckCtrl,  BM_GETCHECK, 0, 0) == BST_CHECKED);
+            g.needAlt   = (SendMessageW(g.hwndCheckAlt,   BM_GETCHECK, 0, 0) == BST_CHECKED);
+            g.needShift = (SendMessageW(g.hwndCheckShift, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            g.needWin   = (SendMessageW(g.hwndCheckWin,   BM_GETCHECK, 0, 0) == BST_CHECKED);
+            UpdateHotkeyLabel();
+            SaveSettings();
+            UpdateHotkeyRegistration();
+            return 0;
+        }
+
         if (id == ID_BTN_SET_KEY) {
             g.waitingForKey = true;
             SetWindowTextW(g.hwndBtnSet, L"Press a key...");
@@ -645,6 +676,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SendMessageW(g.hwndCheckWin,   BM_SETCHECK, BST_UNCHECKED, 0);
             UpdateHotkeyLabel();
             SaveSettings();
+            UpdateHotkeyRegistration();
         }
         else if (id == ID_BTN_TEST) {
             PlayConfiguredSound();
@@ -657,6 +689,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         else if (id == 5001) {  // Enable checkbox
             g.enabled = (SendMessageW((HWND)lParam, BM_GETCHECK, 0, 0) == BST_CHECKED);
             SaveSettings();
+            UpdateHotkeyRegistration();
         }
         else if (id == ID_TRAY_SHOW) {
             ShowWindow(hwnd, SW_RESTORE);
@@ -726,6 +759,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
 
     case WM_DESTROY:
+        UnregisterHotKey(hwnd, 1);
         RemoveTrayIcon();
         if (g.hKeyboardHook) UnhookWindowsHookEx(g.hKeyboardHook);
         CloseMidiOut();
