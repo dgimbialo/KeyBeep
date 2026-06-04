@@ -89,6 +89,7 @@ struct AppState {
     HWND        hwndCheckWin;
 
     bool        enabled;
+    bool        comboWasActive;
 
     // Persistent MIDI Out handle — opened once, reused for every note
     HMIDIOUT    hMidiOut;
@@ -104,7 +105,6 @@ void AddTrayIcon(HWND hwnd);
 void RemoveTrayIcon();
 void SaveSettings();
 void LoadSettings();
-void UpdateHotkeyRegistration();
 wchar_t* VKToName(UINT vk, wchar_t* buf, int buflen);
 bool IsAutoStartEnabled();
 void SetAutoStart(bool enable);
@@ -379,19 +379,20 @@ wchar_t* VKToName(UINT vk, wchar_t* buf, int buflen) {
     return buf;
 }
 
-void UpdateHotkeyRegistration() {
-    if (!g.hwndMain) return;
+static bool IsComboActive() {
+    if (g.triggerVK == 0) return false;
 
-    UnregisterHotKey(g.hwndMain, 1);
-    if (g.triggerVK == 0) return;
+    bool ctrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool alt   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
+    bool shift = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
+    bool win   = ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000) != 0;
+    bool main  = (GetAsyncKeyState(g.triggerVK) & 0x8000) != 0;
 
-    UINT modifiers = 0;
-    if (g.needCtrl)  modifiers |= MOD_CONTROL;
-    if (g.needAlt)   modifiers |= MOD_ALT;
-    if (g.needShift) modifiers |= MOD_SHIFT;
-    if (g.needWin)   modifiers |= MOD_WIN;
-
-    RegisterHotKey(g.hwndMain, 1, modifiers, g.triggerVK);
+    return main &&
+           ctrl == g.needCtrl &&
+           alt == g.needAlt &&
+           shift == g.needShift &&
+           win == g.needWin;
 }
 
 // ---- Update hotkey label ----
@@ -413,13 +414,6 @@ void UpdateHotkeyLabel() {
         StringCchPrintfW(label, 256, L"Hotkey: %s", combo);
     }
     SetWindowTextW(g.hwndStatus, label);
-}
-
-static bool IsRequiredModifierKey(UINT vk) {
-    return (g.needCtrl  && IsCtrlVK(vk))  ||
-           (g.needAlt   && IsAltVK(vk))   ||
-           (g.needShift && IsShiftVK(vk)) ||
-           (g.needWin   && IsWinVK(vk));
 }
 
 // ---- Low-level keyboard hook ----
@@ -462,14 +456,32 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 SetWindowTextW(g.hwndBtnSet, L"Set Key");
                 KillTimer(g.hwndMain, TIMER_WAITING_KEY);
                 SaveSettings();
-                UpdateHotkeyRegistration();
                 return 1; // consume the key
             }
             return CallNextHookEx(g.hKeyboardHook, nCode, wParam, lParam);
         }
 
-        // Normal hotkey detection is handled by RegisterHotKey/WM_HOTKEY.
-        // The low-level hook is kept only for the "Set Key" capture flow.
+        if (!g.waitingForKey && g.enabled && g.triggerVK != 0 &&
+            (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+        {
+            if (kb->vkCode == g.triggerVK) {
+                bool ctrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+                bool alt   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
+                bool shift = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
+                bool win   = ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000) != 0;
+
+                if (ctrl == g.needCtrl && alt == g.needAlt &&
+                    shift == g.needShift && win == g.needWin)
+                {
+                    PostMessageW(g.hwndMain, WM_USER + 10, 0, 0);
+                }
+            }
+        }
+
+        if (!g.waitingForKey && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+        {
+            if (!IsComboActive()) g.comboWasActive = false;
+        }
     }
     return CallNextHookEx(g.hKeyboardHook, nCode, wParam, lParam);
 }
@@ -634,15 +646,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         AddTrayIcon(hwnd);
         CreateControls(hwnd);
         InitMidiOut();
-        UpdateHotkeyRegistration();
         return 0;
 
     case WM_USER + 10:  // play sound (posted from hook)
         PlayConfiguredSound();
-        return 0;
-
-    case WM_HOTKEY:
-        if (g.enabled) PlayConfiguredSound();
         return 0;
 
     case WM_COMMAND: {
@@ -657,7 +664,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             g.needWin   = (SendMessageW(g.hwndCheckWin,   BM_GETCHECK, 0, 0) == BST_CHECKED);
             UpdateHotkeyLabel();
             SaveSettings();
-            UpdateHotkeyRegistration();
             return 0;
         }
 
@@ -676,7 +682,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SendMessageW(g.hwndCheckWin,   BM_SETCHECK, BST_UNCHECKED, 0);
             UpdateHotkeyLabel();
             SaveSettings();
-            UpdateHotkeyRegistration();
         }
         else if (id == ID_BTN_TEST) {
             PlayConfiguredSound();
@@ -689,7 +694,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         else if (id == 5001) {  // Enable checkbox
             g.enabled = (SendMessageW((HWND)lParam, BM_GETCHECK, 0, 0) == BST_CHECKED);
             SaveSettings();
-            UpdateHotkeyRegistration();
         }
         else if (id == ID_TRAY_SHOW) {
             ShowWindow(hwnd, SW_RESTORE);
@@ -759,7 +763,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
 
     case WM_DESTROY:
-        UnregisterHotKey(hwnd, 1);
         RemoveTrayIcon();
         if (g.hKeyboardHook) UnhookWindowsHookEx(g.hKeyboardHook);
         CloseMidiOut();
