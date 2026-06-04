@@ -19,7 +19,7 @@ Useful as an audible confirmation for language-switch keys, mute/unmute keys, PT
 ## Features
 
 - Global hotkey with optional modifiers (Ctrl / Alt / Shift / Win)
-- 7 sound types: MIDI tones (Low/Mid/High/Double Beep) + 3 Windows system sounds
+- 7 sound types: MIDI tones (Low/Mid/High/Double Beep)
 - Sound plays reliably even after system sounds or volume OSD — uses a persistent MIDI Out handle
 - Runs silently in the system tray; settings window on double-click
 - Self-installer: copies itself to `%LOCALAPPDATA%\KeyBeep\` and adds autostart
